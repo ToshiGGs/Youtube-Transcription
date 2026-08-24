@@ -51,7 +51,7 @@ youtube-transcription-bot = "youtube_transcription_bot.__main__:main"
 packages = ["src/youtube_transcription_bot"]
 
 [tool.pytest.ini_options]
-addopts = "-q --basetemp=.tmp/pytest"
+addopts = "-q --basetemp=.pytest-tmp"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
