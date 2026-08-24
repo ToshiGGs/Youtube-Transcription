@@ -59,3 +59,4 @@ async def test_summary_uses_responses_api(monkeypatch, settings_factory):
     fake_client = service._client
     assert fake_client.responses.calls[0]["model"] == "gpt-5.5"
     assert "Transcript:" in fake_client.responses.calls[0]["input"]
+    assert fake_client.responses.calls[0]["store"] is False

@@ -8,10 +8,13 @@ import mimetypes
 import re
 import tempfile
 import time
+from collections.abc import AsyncIterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from urllib.parse import urlsplit
 
+import aiohttp
 import discord
 
 from .config import Settings
@@ -51,6 +54,15 @@ SUPPORTED_MEDIA_EXTENSIONS = frozenset(
     }
 )
 HEARTBEAT_INTERVAL_SECONDS = 30
+ATTACHMENT_DOWNLOAD_CHUNK_BYTES = 1024 * 1024
+ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS = 30 * 60
+DISCORD_CDN_HOSTS = frozenset(
+    {
+        "cdn.discord.com",
+        "cdn.discordapp.com",
+        "media.discordapp.net",
+    }
+)
 
 
 class JobKind(StrEnum):
@@ -70,8 +82,6 @@ def _trim_url(value: str) -> str:
 
 
 def _known_podcast_url(value: str) -> bool:
-    from urllib.parse import urlsplit
-
     host = (urlsplit(value).hostname or "").lower()
     return host in KNOWN_PODCAST_HOSTS or host.endswith(".podcasts.apple.com")
 
@@ -105,6 +115,67 @@ def route_message(message: discord.Message) -> MessageJob | None:
     if supported:
         return MessageJob(JobKind.ATTACHMENT, supported[0])
     return None
+
+
+async def _write_bounded_chunks(
+    chunks: AsyncIterable[bytes],
+    path: Path,
+    max_bytes: int,
+) -> int:
+    bytes_written = 0
+    with path.open("wb") as output:
+        async for chunk in chunks:
+            if not chunk:
+                continue
+            bytes_written += len(chunk)
+            if bytes_written > max_bytes:
+                raise MediaLimitError(
+                    "The attachment exceeds the configured size limit."
+                )
+            await asyncio.to_thread(output.write, chunk)
+    if bytes_written == 0:
+        raise MediaLimitError("The attachment download was empty.")
+    return bytes_written
+
+
+async def _download_attachment(
+    attachment: discord.Attachment,
+    path: Path,
+    max_bytes: int,
+) -> None:
+    parsed = urlsplit(attachment.url)
+    if (
+        parsed.scheme != "https"
+        or (parsed.hostname or "").lower() not in DISCORD_CDN_HOSTS
+    ):
+        raise UnsupportedInputError("The Discord attachment URL was invalid.")
+
+    timeout = aiohttp.ClientTimeout(
+        total=ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS,
+        connect=30,
+        sock_read=120,
+    )
+    async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
+        async with session.get(attachment.url, allow_redirects=False) as response:
+            if response.status != 200:
+                raise UserVisibleError(
+                    "The Discord attachment could not be downloaded."
+                )
+            declared_length = response.headers.get("Content-Length")
+            if declared_length:
+                try:
+                    declared_bytes = int(declared_length)
+                except ValueError:
+                    declared_bytes = None
+                if declared_bytes is not None and declared_bytes > max_bytes:
+                    raise MediaLimitError(
+                        "The attachment exceeds the configured size limit."
+                    )
+            await _write_bounded_chunks(
+                response.content.iter_chunked(ATTACHMENT_DOWNLOAD_CHUNK_BYTES),
+                path,
+                max_bytes,
+            )
 
 
 class TranscriptionBot(discord.Client):
@@ -221,7 +292,11 @@ class TranscriptionBot(discord.Client):
             suffix = ".media"
         with tempfile.TemporaryDirectory(prefix="discord-media-") as raw_temp:
             path = Path(raw_temp) / f"attachment{suffix}"
-            await attachment.save(path, use_cached=True)
+            await _download_attachment(
+                attachment,
+                path,
+                self._settings.max_attachment_bytes,
+            )
             if not path.is_file() or path.stat().st_size <= 0:
                 raise MediaLimitError("The attachment download was empty.")
             if path.stat().st_size > self._settings.max_attachment_bytes:

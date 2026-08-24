@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from youtube_transcription_bot.config import Settings
+from youtube_transcription_bot.config import MAX_ATTACHMENT_BYTES_LIMIT, Settings
 
 
 def test_settings_parse_explicit_channel_allowlist(settings_factory):
@@ -14,6 +14,17 @@ def test_settings_parse_explicit_channel_allowlist(settings_factory):
         123456789012345678,
         987654321098765432,
     }
+
+
+def test_settings_parse_single_channel_id_from_environment(monkeypatch):
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "not-real")
+    monkeypatch.setenv("DISCORD_ALLOWED_CHANNEL_IDS", "123456789012345678")
+    monkeypatch.setenv("ASSEMBLYAI_API_KEY", "not-real")
+    monkeypatch.setenv("OPENAI_API_KEY", "not-real")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.discord_allowed_channel_ids == {123456789012345678}
 
 
 def test_settings_reject_empty_channel_allowlist():
@@ -42,3 +53,8 @@ def test_iproyal_requires_credentials(settings_factory):
             youtube_proxy_host="proxy.example",
             youtube_proxy_port=12321,
         )
+
+
+def test_attachment_limit_leaves_tmpfs_room_for_extracted_audio(settings_factory):
+    with pytest.raises(ValidationError):
+        settings_factory(max_attachment_bytes=MAX_ATTACHMENT_BYTES_LIMIT + 1)

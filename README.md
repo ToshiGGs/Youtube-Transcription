@@ -56,7 +56,7 @@ Running this software sends data to services you configure:
 | Discord | Message content needed for routing; generated summary and transcript reply |
 | YouTube / configured proxy | Video ID, transcript and subtitle requests, audio retrieval when fallback is needed |
 | AssemblyAI | Downloaded YouTube audio, podcast enclosure URL, or uploaded media when transcription fallback is needed |
-| OpenAI | Transcript text and minimal source metadata for summarization |
+| OpenAI | Transcript text and minimal source metadata for summarization; Responses requests set `store=false` |
 | Apple Podcasts | Podcast search or lookup terms |
 | Spotify | Episode ID and configured market when a Spotify episode URL is used |
 | PodcastIndex | Podcast search terms when credentials are configured |

@@ -6,11 +6,14 @@ import asyncio
 import html
 import json
 import logging
+import math
 import re
 import subprocess
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import requests
@@ -47,6 +50,7 @@ YOUTUBE_HOSTS = frozenset(
     }
 )
 YOUTUBE_TRANSCRIPT_TIMEOUT_SECONDS = 45
+YOUTUBE_TRANSCRIPT_REQUEST_TIMEOUT_SECONDS = 30
 YT_DLP_SUBTITLE_TIMEOUT_SECONDS = 180
 YT_DLP_METADATA_TIMEOUT_SECONDS = 90
 YT_DLP_DOWNLOAD_TIMEOUT_SECONDS = 60 * 60
@@ -55,6 +59,27 @@ TIMESTAMP_PATTERN = re.compile(
     r"\d{1,2}:\d{2}(?::\d{2})?[,.]\d{3}"
 )
 TAG_PATTERN = re.compile(r"<[^>]+>")
+TRANSCRIPT_WORD_PATTERN = re.compile(r"[a-z0-9]+", flags=re.IGNORECASE)
+CAPTION_WINDOW_MIN_WORDS = 6
+CAPTION_WINDOW_MAX_WORDS = 16
+CAPTION_WINDOW_MIN_REPEATS = 3
+CAPTION_LINE_OVERLAP_MIN_WORDS = 4
+
+
+class _TimeoutSession(requests.Session):
+    def __init__(self, timeout_seconds: float) -> None:
+        super().__init__()
+        self._timeout_seconds = timeout_seconds
+
+    def request(
+        self,
+        method: str | bytes,
+        url: str | bytes,
+        *args: Any,
+        **kwargs: Any,
+    ) -> requests.Response:
+        kwargs.setdefault("timeout", self._timeout_seconds)
+        return super().request(method, url, *args, **kwargs)
 
 
 def validate_youtube_id(value: str) -> str:
@@ -84,6 +109,119 @@ def extract_youtube_id(value: str) -> str:
         else:
             video_id = ""
     return validate_youtube_id(video_id)
+
+
+def _transcript_words(text: str) -> list[str]:
+    return TRANSCRIPT_WORD_PATTERN.findall(text.lower())
+
+
+def _find_repeated_caption_window(text: str) -> tuple[int, int] | None:
+    word_matches = list(TRANSCRIPT_WORD_PATTERN.finditer(text))
+    words = [match.group().lower() for match in word_matches]
+    if len(words) < CAPTION_WINDOW_MIN_WORDS * CAPTION_WINDOW_MIN_REPEATS:
+        return None
+
+    for phrase_len in range(
+        CAPTION_WINDOW_MAX_WORDS,
+        CAPTION_WINDOW_MIN_WORDS - 1,
+        -1,
+    ):
+        max_start = len(words) - (phrase_len * CAPTION_WINDOW_MIN_REPEATS)
+        for start in range(max_start + 1):
+            phrase = words[start : start + phrase_len]
+            repeat_count = 1
+            next_start = start + phrase_len
+            while words[next_start : next_start + phrase_len] == phrase:
+                repeat_count += 1
+                next_start += phrase_len
+            if repeat_count >= CAPTION_WINDOW_MIN_REPEATS and next_start < len(words):
+                keep_word_index = start + ((repeat_count - 1) * phrase_len)
+                return (
+                    word_matches[start].start(),
+                    word_matches[keep_word_index].start(),
+                )
+    return None
+
+
+def _collapse_repeated_caption_windows(text: str) -> str:
+    collapsed = text
+    while True:
+        repeat = _find_repeated_caption_window(collapsed)
+        if repeat is None:
+            return collapsed
+        duplicate_start, keep_start = repeat
+        prefix = collapsed[:duplicate_start].rstrip()
+        suffix = collapsed[keep_start:].lstrip()
+        collapsed = f"{prefix} {suffix}".strip() if prefix else suffix
+
+
+def _words_start_with(words: list[str], prefix: list[str]) -> bool:
+    return (
+        len(prefix) >= CAPTION_LINE_OVERLAP_MIN_WORDS
+        and len(words) >= len(prefix)
+        and words[: len(prefix)] == prefix
+    )
+
+
+def _shared_word_overlap_length(
+    left_words: list[str],
+    right_words: list[str],
+) -> int:
+    max_overlap = min(len(left_words), len(right_words))
+    for overlap in range(max_overlap, CAPTION_LINE_OVERLAP_MIN_WORDS - 1, -1):
+        if left_words[-overlap:] == right_words[:overlap]:
+            return overlap
+    return 0
+
+
+def _remove_word_prefix(text: str, word_count: int) -> str:
+    word_matches = list(TRANSCRIPT_WORD_PATTERN.finditer(text))
+    if word_count <= 0:
+        return text
+    if word_count >= len(word_matches):
+        return ""
+    return text[word_matches[word_count - 1].end() :].lstrip()
+
+
+def _append_caption_suffix(text: str, suffix: str) -> str:
+    separator = "" if suffix[:1] in ",.;:!?" else " "
+    return f"{text}{separator}{suffix}"
+
+
+def normalize_caption_lines(lines: Iterable[str]) -> str:
+    normalized_lines: list[str] = []
+    normalized_words: list[list[str]] = []
+    for line in lines:
+        normalized_line = " ".join(line.split())
+        normalized_line = _collapse_repeated_caption_windows(normalized_line)
+        if not normalized_line:
+            continue
+
+        current_words = _transcript_words(normalized_line)
+        if normalized_lines:
+            previous_words = normalized_words[-1]
+            if previous_words == current_words:
+                continue
+            if _words_start_with(current_words, previous_words):
+                normalized_lines[-1] = normalized_line
+                normalized_words[-1] = current_words
+                continue
+            if _words_start_with(previous_words, current_words):
+                continue
+
+            overlap = _shared_word_overlap_length(previous_words, current_words)
+            if overlap:
+                suffix = _remove_word_prefix(normalized_line, overlap)
+                if suffix:
+                    normalized_lines[-1] = _append_caption_suffix(
+                        normalized_lines[-1], suffix
+                    )
+                    normalized_words[-1] = _transcript_words(normalized_lines[-1])
+                continue
+
+        normalized_lines.append(normalized_line)
+        normalized_words.append(current_words)
+    return " ".join(normalized_lines)
 
 
 def parse_vtt_transcript(value: str) -> str:
@@ -117,7 +255,7 @@ def parse_vtt_transcript(value: str) -> str:
             continue
         current.append(line)
     flush()
-    transcript = " ".join(cues).strip()
+    transcript = normalize_caption_lines(cues).strip()
     if not transcript:
         raise TranscriptUnavailableError("YouTube subtitles were empty.")
     return transcript
@@ -160,12 +298,17 @@ class YouTubeService:
         self._settings = settings
         self._assemblyai = assemblyai
 
-    def _youtube_api(self, identity: YouTubeRequestIdentity) -> YouTubeTranscriptApi:
+    def _youtube_api(
+        self,
+        identity: YouTubeRequestIdentity,
+        http_client: requests.Session,
+    ) -> YouTubeTranscriptApi:
         proxy = identity.proxy_value
         if not proxy:
-            return YouTubeTranscriptApi()
+            return YouTubeTranscriptApi(http_client=http_client)
         return YouTubeTranscriptApi(
-            proxy_config=GenericProxyConfig(http_url=proxy, https_url=proxy)
+            proxy_config=GenericProxyConfig(http_url=proxy, https_url=proxy),
+            http_client=http_client,
         )
 
     def _timed_transcript(
@@ -173,13 +316,37 @@ class YouTubeService:
         video_id: str,
         identity: YouTubeRequestIdentity,
     ) -> str:
-        api = self._youtube_api(identity)
-        fetched = api.fetch(video_id, languages=["en"])
-        text = " ".join(
-            snippet.text.strip()
-            for snippet in fetched
-            if isinstance(snippet.text, str) and snippet.text.strip()
-        )
+        with _TimeoutSession(YOUTUBE_TRANSCRIPT_REQUEST_TIMEOUT_SECONDS) as client:
+            client.headers.update(
+                {
+                    "User-Agent": identity.user_agent,
+                    "Accept-Language": identity.accept_language,
+                }
+            )
+            api = self._youtube_api(identity, client)
+            fetched = api.fetch(video_id, languages=["en"])
+            snippets: list[tuple[float, str]] = []
+            for snippet in fetched:
+                snippet_text = getattr(snippet, "text", None)
+                if not isinstance(snippet_text, str) or not snippet_text.strip():
+                    continue
+                try:
+                    start = float(snippet.start)
+                except (AttributeError, TypeError, ValueError) as exc:
+                    raise TranscriptUnavailableError(
+                        "YouTube returned invalid transcript timing."
+                    ) from exc
+                if not math.isfinite(start) or start < 0:
+                    raise TranscriptUnavailableError(
+                        "YouTube returned invalid transcript timing."
+                    )
+                snippets.append(
+                    (start, html.unescape(TAG_PATTERN.sub("", snippet_text)))
+                )
+            snippets.sort(key=lambda item: item[0])
+            text = normalize_caption_lines(
+                snippet_text for _, snippet_text in snippets
+            )
         if not text:
             raise TranscriptUnavailableError("YouTube returned an empty transcript.")
         return text
@@ -270,6 +437,8 @@ class YouTubeService:
         self,
         video_id: str,
         identity: YouTubeRequestIdentity,
+        *,
+        use_cookies: bool,
     ) -> VideoMetadata:
         command = [
             "yt-dlp",
@@ -278,7 +447,7 @@ class YouTubeService:
             "--skip-download",
             "--dump-single-json",
             "--quiet",
-            *self._cookies_args(),
+            *(self._cookies_args() if use_cookies else []),
             *identity.ytdlp_args,
             f"https://youtu.be/{video_id}",
         ]
@@ -426,7 +595,11 @@ class YouTubeService:
                         temp_dir,
                     )
                     source = "youtube_subtitles"
-                except (TranscriptUnavailableError, ProxyTransportFailure):
+                except ProxyTransportFailure:
+                    logger.info("Subtitle fallback unavailable for a YouTube video.")
+                    if self._settings.youtube_proxy_enabled:
+                        identity = build_youtube_identity(self._settings)
+                except TranscriptUnavailableError:
                     logger.info("Subtitle fallback unavailable for a YouTube video.")
 
             if transcript is None:
@@ -456,6 +629,7 @@ class YouTubeService:
                             self._metadata_with_ytdlp,
                             video_id,
                             profile_identity,
+                            use_cookies=use_cookies,
                         )
                         metadata = ytdlp_metadata
                         audio = await asyncio.to_thread(

@@ -5,12 +5,14 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .errors import ConfigurationError
+
+MAX_ATTACHMENT_BYTES_LIMIT = 500 * 1024 * 1024
 
 
 class Settings(BaseSettings):
@@ -22,7 +24,7 @@ class Settings(BaseSettings):
     )
 
     discord_bot_token: SecretStr
-    discord_allowed_channel_ids: frozenset[int]
+    discord_allowed_channel_ids: Annotated[frozenset[int], NoDecode]
     assemblyai_api_key: SecretStr
     openai_api_key: SecretStr
     openai_model: str = "gpt-5.5"
@@ -50,9 +52,10 @@ class Settings(BaseSettings):
 
     max_concurrent_jobs: int = Field(default=1, ge=1, le=8)
     max_attachment_bytes: int = Field(
-        default=500 * 1024 * 1024,
+        default=MAX_ATTACHMENT_BYTES_LIMIT,
         ge=1 * 1024 * 1024,
-        le=2 * 1024 * 1024 * 1024,
+        # The 1 GiB /tmp tmpfs may briefly contain both an upload and extracted audio.
+        le=MAX_ATTACHMENT_BYTES_LIMIT,
     )
     max_remote_media_bytes: int = Field(
         default=512 * 1024 * 1024,

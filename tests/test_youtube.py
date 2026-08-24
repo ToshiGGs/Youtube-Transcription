@@ -1,17 +1,24 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import requests
 
+import youtube_transcription_bot.youtube as youtube_module
 from youtube_transcription_bot.errors import (
     TranscriptUnavailableError,
     UnsupportedInputError,
 )
 from youtube_transcription_bot.youtube import (
+    YOUTUBE_TRANSCRIPT_REQUEST_TIMEOUT_SECONDS,
     VideoMetadata,
     YouTubeService,
+    _TimeoutSession,
     extract_youtube_id,
+    normalize_caption_lines,
     parse_vtt_transcript,
 )
 
@@ -51,6 +58,106 @@ Second thought
     )
 
 
+def test_caption_normalization_removes_shared_word_overlap_and_repeated_windows():
+    repeated = "one two three four five six " * 3
+    assert normalize_caption_lines(
+        [
+            "The speaker explains the first important point",
+            "the first important point and then gives evidence",
+            f"{repeated}closing thought",
+        ]
+    ) == (
+        "The speaker explains the first important point and then gives evidence "
+        "one two three four five six closing thought"
+    )
+
+
+def test_timeout_session_applies_default_transport_timeout(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def request(self, method, url, *args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(requests.Session, "request", request)
+    session = _TimeoutSession(YOUTUBE_TRANSCRIPT_REQUEST_TIMEOUT_SECONDS)
+
+    session.request("GET", "https://www.youtube.com/")
+
+    assert captured["timeout"] == YOUTUBE_TRANSCRIPT_REQUEST_TIMEOUT_SECONDS
+
+
+def test_timed_transcript_wires_timeout_session_and_headers(
+    monkeypatch,
+    settings_factory,
+):
+    captured: dict[str, object] = {}
+
+    class FakeTranscriptApi:
+        def __init__(self, *, proxy_config=None, http_client=None):
+            captured["proxy_config"] = proxy_config
+            captured["http_client"] = http_client
+
+        def fetch(self, video_id, *, languages):
+            assert video_id == "dQw4w9WgXcQ"
+            assert languages == ["en"]
+            return [
+                SimpleNamespace(text="second caption", start=10.0),
+                SimpleNamespace(text="first caption", start=0.0),
+            ]
+
+    monkeypatch.setattr(youtube_module, "YouTubeTranscriptApi", FakeTranscriptApi)
+    settings = settings_factory()
+    service = YouTubeService(settings, SimpleNamespace())
+    identity = youtube_module.build_youtube_identity(settings)
+
+    assert service._timed_transcript("dQw4w9WgXcQ", identity) == (
+        "first caption second caption"
+    )
+    http_client = captured["http_client"]
+    assert isinstance(http_client, _TimeoutSession)
+    assert http_client.headers["User-Agent"] == identity.user_agent
+    assert http_client.headers["Accept-Language"] == identity.accept_language
+
+
+def test_ytdlp_metadata_cookie_policy_matches_fallback_profile(
+    monkeypatch,
+    settings_factory,
+    tmp_path,
+):
+    cookies = tmp_path / "runtime-state.txt"
+    cookies.write_text("not-real", encoding="utf-8")
+    settings = settings_factory(youtube_cookies_file=cookies)
+    service = YouTubeService(settings, SimpleNamespace())
+    identity = youtube_module.build_youtube_identity(settings)
+    commands: list[list[str]] = []
+
+    def run(command, identity, *, timeout):
+        commands.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            returncode=0,
+            stdout='{"title":"Example","duration":60}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(youtube_module, "_run_command", run)
+
+    service._metadata_with_ytdlp(
+        "dQw4w9WgXcQ",
+        identity,
+        use_cookies=False,
+    )
+    service._metadata_with_ytdlp(
+        "dQw4w9WgXcQ",
+        identity,
+        use_cookies=True,
+    )
+
+    assert "--cookies" not in commands[0]
+    assert commands[1][commands[1].index("--cookies") + 1] == str(cookies)
+
+
 @pytest.mark.asyncio
 async def test_youtube_fallback_order_reaches_assemblyai(
     monkeypatch,
@@ -78,8 +185,9 @@ async def test_youtube_fallback_order_reaches_assemblyai(
         events.append("subtitles")
         raise TranscriptUnavailableError("unavailable")
 
-    def ytdlp_metadata(video_id, identity):
+    def ytdlp_metadata(video_id, identity, *, use_cookies):
         events.append("media_metadata")
+        assert use_cookies is True
         return VideoMetadata("Example", "Channel", 60)
 
     def download(video_id, identity, temp_dir, **kwargs):

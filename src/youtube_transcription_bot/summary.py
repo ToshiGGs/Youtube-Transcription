@@ -148,6 +148,7 @@ class SummaryService:
                 instructions=instructions,
                 input=source,
                 max_output_tokens=max_output_tokens,
+                store=False,
             )
         except Exception as exc:
             raise UserVisibleError(
