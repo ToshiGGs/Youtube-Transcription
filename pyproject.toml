@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "youtube-transcription-bot"
+version = "1.0.0"
+description = "A security-first Discord bot for YouTube, podcast, and uploaded-media transcription and summarization."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "ToshiGGs" }]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Communications :: Chat",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+  "aiohttp>=3.12,<4",
+  "assemblyai>=0.43,<1",
+  "defusedxml>=0.7,<1",
+  "discord.py>=2.5,<3",
+  "openai>=1.109,<3",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "requests[socks]>=2.32,<3",
+  "youtube-transcript-api>=1.1,<2",
+  "yt-dlp[default]>=2026.8.19,<2027",
+]
+
+[project.optional-dependencies]
+dev = [
+  "hatchling>=1.27,<2",
+  "mypy>=1.17,<2",
+  "pip-audit>=2.9,<3",
+  "pytest>=9.0.3,<10",
+  "pytest-asyncio>=1.1,<2",
+  "ruff>=0.12,<1",
+  "types-requests>=2.32,<3",
+]
+
+[project.scripts]
+youtube-transcription-bot = "youtube_transcription_bot.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/youtube_transcription_bot"]
+
+[tool.pytest.ini_options]
+addopts = "-q --basetemp=.tmp/pytest"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC"]
+ignore = ["S101", "ASYNC240"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+packages = ["youtube_transcription_bot"]
+
+[[tool.mypy.overrides]]
+module = ["assemblyai.*", "defusedxml.*", "youtube_transcript_api.*"]
+ignore_missing_imports = true
