@@ -1,155 +1,101 @@
 # YouTube Transcription Bot
 
-A standalone, security-first Discord bot that turns pasted YouTube and podcast inputs
-or uploaded audio/video into a faithful summary plus a transcript attachment.
+A standalone Discord bot that turns YouTube videos, podcast episodes, and uploaded
+audio/video into a source-faithful summary plus a transcript attachment. It reads
+only explicitly allowed channels and replies to the source message; it does not relay
+messages between servers or use webhooks.
 
-This repository is deliberately independent. It contains no private databases,
-internal service URLs, webhooks, deployment hosts, archived data, external archive
-exports, cookies, or credentials.
+## Setup with Docker
 
-## Features
+Docker with Compose is recommended. Startup requires four environment values: a
+Discord bot token, one or more allowed channel IDs, an AssemblyAI API key, and an
+OpenAI API key. AssemblyAI is required even if you expect YouTube captions to exist.
 
-- Paste a YouTube URL into an allowlisted Discord channel.
-- Try YouTube's timed transcript first, then yt-dlp subtitle extraction, then bounded
-  yt-dlp audio download plus AssemblyAI only when captions are unavailable.
-- Optional generic HTTP/HTTPS/SOCKS proxy support.
-- Optional IPRoyal per-job sticky sessions with a fresh session identity for each
-  retrieval attempt.
-- Paste Spotify episode or Apple Podcasts episode URLs.
-- Resolve direct RSS feeds and publisher pages with RSS autodiscovery.
-- Search with `!podcast Show name | Episode title`.
-- Upload audio or video directly to Discord for AssemblyAI transcription.
-- Generate a source-faithful summary with the OpenAI Responses API.
-- Return short summaries as a message, medium summaries as one embed, and oversized
-  summaries as `summary.txt`; the transcript is always attached separately.
-- Suppress Discord mentions at both generation and delivery time.
-- Deduplicate repeated Discord message delivery for 15 minutes.
+### 1. Create and invite the Discord bot
 
-## Security and privacy defaults
+1. In the [Discord Developer Portal](https://discord.com/developers/applications),
+   create an application and bot. Under **Bot**, enable **Message Content Intent**.
+2. Under **OAuth2 > URL Generator**, select the `bot` scope and these permissions:
+   **View Channels**, **Read Message History**, **Send Messages**, **Embed Links**,
+   and **Attach Files**. Open the generated URL and invite the bot to your server.
+3. In Discord, enable **User Settings > Advanced > Developer Mode**, then right-click
+   each channel the bot may read and select **Copy Channel ID**.
 
-- The bot processes messages only in channel IDs explicitly listed in
-  `DISCORD_ALLOWED_CHANNEL_IDS`. An empty allowlist is a startup error.
-- Messages from bots and webhooks are ignored, preventing reply loops.
-- The bot opens no inbound port. It only makes outbound connections.
-- Podcast and publisher URLs are protected against SSRF: only public HTTP(S)
-  destinations on ports 80/443 are accepted, every DNS result and redirect is
-  revalidated, DNS caching is disabled, and response sizes are bounded.
-- The container runs as UID 10001 with a read-only root filesystem, no Linux
-  capabilities, `no-new-privileges`, bounded PIDs/CPU/memory, and a temporary media
-  filesystem.
-- Proxy credentials are not placed in yt-dlp command arguments and provider error
-  payloads are not included in default logs.
-- If a configured proxy fails, the bot does **not** silently expose the host's direct
-  IP. Direct fallback requires the explicit `YOUTUBE_ALLOW_DIRECT_FALLBACK=true`
-  opt-in.
-- `.env`, cookie files, databases, logs, caches, and editor state are excluded from
-  Git and the Docker build context.
+Use the bot token from the developer portal—never a Discord user token.
 
-See [SECURITY.md](SECURITY.md) for reporting and threat-boundary details.
+### 2. Configure the service
 
-## Data sent to third parties
+```bash
+git clone https://github.com/ToshiGGs/Youtube-Transcription.git
+cd Youtube-Transcription
+cp .env.example .env
+```
 
-Running this software sends data to services you configure:
+Set these values in `.env`; separate multiple channel IDs with commas:
 
-| Service | Data sent |
-| --- | --- |
-| Discord | Message content needed for routing; generated summary and transcript reply |
-| YouTube / configured proxy | Video ID, transcript and subtitle requests, audio retrieval when fallback is needed |
-| AssemblyAI | Downloaded YouTube audio, podcast enclosure URL, or uploaded media when transcription fallback is needed |
-| OpenAI | Transcript text and minimal source metadata for summarization; Responses requests set `store=false` |
-| Apple Podcasts | Podcast search or lookup terms |
-| Spotify | Episode ID and configured market when a Spotify episode URL is used |
-| PodcastIndex | Podcast search terms when credentials are configured |
+```dotenv
+DISCORD_BOT_TOKEN=...
+DISCORD_ALLOWED_CHANNEL_IDS=123456789012345678
+ASSEMBLYAI_API_KEY=...
+OPENAI_API_KEY=...
+```
 
-Review those providers' terms and privacy policies. Only process media you are
-authorized to access, download, and send to those services.
+Create provider keys in the [AssemblyAI dashboard](https://www.assemblyai.com/dashboard/)
+and [OpenAI API platform](https://platform.openai.com/api-keys). Keep `.env`
+private; all other settings in `.env.example` are optional or have safe defaults.
 
-## Prerequisites
-
-- A Discord bot token with the **Message Content Intent** enabled in the Discord
-  developer portal.
-- The bot invited with permission to view the allowlisted channel, read message
-  history, send messages, embed links, attach files, and use external emojis only if
-  your server requires them.
-- An AssemblyAI API key.
-- An OpenAI API key. The implementation uses the official Python client and the
-  Responses API described in the [OpenAI Python API reference](https://developers.openai.com/api/reference/python/).
-- Docker with Compose (recommended), or Python 3.11+, ffmpeg, Node.js, and yt-dlp.
-- Optional Spotify client credentials for Spotify episode URLs.
-- Optional PodcastIndex read credentials for broader feed search.
-- Optional YouTube proxy credentials and a Netscape-format cookies file.
-
-## Quick start with Docker
-
-1. Clone the repository.
-2. Copy `.env.example` to `.env`.
-3. Populate the required keys and replace the example channel ID with the exact
-   channel or comma-separated channel IDs the bot may read.
-4. Start the outbound-only bot:
+### 3. Start and test
 
 ```bash
 docker compose up -d --build
-```
-
-5. Verify the container reached Discord:
-
-```bash
 docker compose ps
 docker compose logs --tail=100 bot
 ```
 
-Do not paste `.env`, proxy URLs, Discord tokens, provider keys, signed podcast URLs,
-or cookie contents into issues or logs.
+Wait for `Discord bot is connected and ready`, then paste a YouTube URL in an allowed
+channel. The bot should reply with a summary and a `.txt` transcript. It opens no
+inbound port.
 
-## Inputs
+## Supported inputs
 
-In an allowlisted channel:
+| Input | Send in an allowed channel |
+| --- | --- |
+| YouTube video | A `youtube.com` or `youtu.be` URL |
+| Spotify episode | An episode URL; requires Spotify credentials |
+| Apple Podcasts | An episode URL; a show URL selects its latest episode |
+| RSS feed | `!podcast https://example.com/feed.xml` selects the latest episode |
+| Publisher episode page | `!podcast URL`; the page must expose RSS and match a feed item |
+| Podcast search | `!podcast Show name \| Exact episode title` |
+| Upload | Attach a supported audio or video file |
 
-```text
-https://www.youtube.com/watch?v=dQw4w9WgXcQ
-https://open.spotify.com/episode/...
-https://podcasts.apple.com/.../id...?i=...
-!podcast https://example.com/feed.xml
-!podcast Show name | Exact episode title
-```
+Automatic URL routing is limited to YouTube, Spotify, and Apple Podcasts. Generic
+URLs require `!podcast`, preventing ordinary links from being fetched unexpectedly.
+If a message has several inputs, only the first supported URL—or otherwise the first
+supported attachment—is processed.
 
-Audio and video attachments are also accepted. When a message contains multiple
-supported inputs, the first supported URL is processed; otherwise the first supported
-attachment is used. Send separate messages for separate jobs.
+## Processing behavior
 
-For a generic publisher page or direct RSS URL, use the `!podcast` prefix. Automatic
-URL routing is intentionally limited to YouTube, Spotify, and Apple hosts so ordinary
-links in an allowlisted channel are not fetched unexpectedly.
+- YouTube tries a timed transcript, yt-dlp subtitles, then bounded audio download
+  with AssemblyAI.
+- Podcasts resolve to one public RSS episode and use AssemblyAI. Ambiguous searches
+  fail closed; use the `Show | Episode` form.
+- Uploaded video is converted to audio with ffmpeg. OpenAI then summarizes every
+  transcript; replies suppress mentions and include transcript provenance.
 
-## Proxy configuration
+## Optional integrations
 
-Set `YOUTUBE_PROXY_ENABLED=true` and provide the host, port, protocol, and optional
-username/password fields. Do not embed credentials in `YOUTUBE_PROXY_HOST`.
+- Spotify URLs need both `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`.
+- PodcastIndex adds a search source and needs both `PODCAST_INDEX_API_KEY` and
+  `PODCAST_INDEX_API_SECRET`. Apple Podcasts and direct RSS need no credentials.
 
-For IPRoyal, use:
+For a YouTube proxy, set `YOUTUBE_PROXY_ENABLED=true` plus the host, port, protocol,
+and optional credentials shown in `.env.example`; never embed credentials in the
+host. Direct fallback requires `YOUTUBE_ALLOW_DIRECT_FALLBACK=true`. IPRoyal mode
+requires `YOUTUBE_PROXY_PROVIDER=iproyal`; it uses a fresh sticky identity per job
+and rotates it for later fallback profiles or confirmed proxy failures.
 
-```dotenv
-YOUTUBE_PROXY_PROVIDER=iproyal
-YOUTUBE_PROXY_HOST=geo.iproyal.com
-YOUTUBE_PROXY_PORT=12321
-YOUTUBE_PROXY_USERNAME=...
-YOUTUBE_PROXY_PASSWORD=...
-YOUTUBE_PROXY_COUNTRY=us
-YOUTUBE_PROXY_SESSION_LIFETIME=10m
-```
-
-The password, country, and a random eight-character session ID are composed only in
-memory. The completed credential is never logged or placed in a child process's
-argument list.
-
-## Optional YouTube cookies
-
-Cookies can improve access to age-restricted or bot-protected videos, but they grant
-the privileges of the exporting account and are sensitive. Keep the file outside the
-repository and mount it read-only. Then set `YOUTUBE_COOKIES_FILE` to its path inside
-the container. The provided Compose file does not mount cookies automatically.
-
-Example override:
+For age-restricted or bot-protected videos, keep a Netscape-format cookie file
+outside the repository and mount it read-only with a Compose override:
 
 ```yaml
 services:
@@ -165,32 +111,46 @@ services:
 
 Then set `YOUTUBE_COOKIES_FILE=/run/secrets/youtube-cookies.txt` in `.env`.
 
-## Local development
+## Limits and security
+
+- Defaults: 500 MiB per upload, 512 MiB per remote podcast file, six hours of media,
+  and 1.5 million transcript characters.
+- YouTube completion and duration checks apply only when audio fallback is needed;
+  caption paths run first.
+- Podcasts require a feed duration and a non-zero size from RSS or HTTP
+  `Content-Length`/`Content-Range`.
+- Bots and webhooks are ignored. Podcast requests reject private networks, URL
+  credentials, nonstandard ports, unsafe redirects, oversized responses, and wrong
+  media types.
+- Compose runs non-root with a read-only filesystem, dropped capabilities,
+  `no-new-privileges`, resource limits, and temporary media storage.
+- The bot does not bypass DRM, paywalls, access controls, or provider terms.
+
+Data flow: Discord receives the input and reply; OpenAI receives transcript text and
+minimal source context with `store=false`; AssemblyAI receives media or a validated
+podcast URL when needed. Input providers and any configured proxy receive their
+required lookup requests. Process only media you may use.
+
+Secrets, cookies, databases, logs, and caches are excluded from Git and Docker build
+context. See [SECURITY.md](SECURITY.md) for details.
+
+## Development
+
+Python 3.11 or 3.12 plus ffmpeg, ffprobe, Node.js, and yt-dlp are required outside
+Docker.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[dev]'
-cp .env.example .env
+python -m pip install --require-hashes -r requirements-dev.lock
+python -m pip install --no-deps --no-build-isolation -e .
 pytest
 ruff check .
 mypy
-python -m youtube_transcription_bot
 ```
 
-The test suite is offline and uses no real provider credentials. Before deployment,
-perform a private smoke test in a dedicated Discord channel using test/provider keys;
-never place live credentials in test fixtures.
-
-## Limitations
-
-- Spotify show URLs are intentionally rejected; use a specific episode URL.
-- Ambiguous podcast searches fail closed. Add both show and episode separated by `|`.
-- Live/upcoming YouTube videos are not treated as completed media.
-- Very long or large media is rejected at configured limits rather than truncated.
-- Podcast feeds must publish a non-zero enclosure size and episode duration so the
-  bot can enforce limits before sending the media URL to AssemblyAI.
-- This project does not bypass DRM, paywalls, access controls, or provider terms.
+Tests are offline and use fake credentials. Perform the first live test in a private
+Discord channel.
 
 ## License
 
