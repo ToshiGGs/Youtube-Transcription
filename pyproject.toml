@@ -21,7 +21,7 @@ classifiers = [
 ]
 dependencies = [
   "aiohttp>=3.12,<4",
-  "assemblyai>=0.43,<1",
+  "assemblyai>=0.43,<2",
   "defusedxml>=0.7,<1",
   "discord.py>=2.5,<3",
   "openai>=1.109,<3",
