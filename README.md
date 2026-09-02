@@ -1,37 +1,72 @@
-# YouTube Transcription Bot
+# Media Transcription & Summary Bot
 
-A standalone Discord bot that turns YouTube videos, podcast episodes, and uploaded
-audio/video into a source-faithful summary plus a transcript attachment. It reads
-only explicitly allowed channels and replies to the source message; it does not relay
-messages between servers or use webhooks.
+A self-hosted Discord bot that turns YouTube videos, podcast episodes, and uploaded
+audio or video into two useful outputs: a source-faithful summary and a downloadable
+transcript. It watches only the Discord channels you explicitly allow and replies to
+the original message. It does not relay messages between servers or use webhooks.
 
-## Setup with Docker
+## What each piece does
 
-Docker with Compose is recommended. Startup requires four environment values: a
-Discord bot token, one or more allowed channel IDs, an AssemblyAI API key, and an
-OpenAI API key. AssemblyAI is required even if you expect YouTube captions to exist.
+| Piece | Purpose |
+| --- | --- |
+| Discord | The inbox and delivery interface. People post media; the bot replies with the result. |
+| This bot | Recognizes the input, obtains or creates a transcript, requests a summary, and safely returns both. |
+| YouTube transcript tools | Try captions first, then subtitles, then an audio fallback. |
+| AssemblyAI | Converts audio to text when a usable transcript is not already available. |
+| OpenAI | Creates the summary from the transcript; it does not receive your Discord token. |
+| ffmpeg and yt-dlp | Extract or download media when transcription requires audio. |
+| Docker Compose | Runs the service with its dependencies and security limits. No inbound port is opened. |
 
-### 1. Create and invite the Discord bot
+AssemblyAI and OpenAI are both required. Spotify, PodcastIndex, a YouTube proxy, and
+YouTube cookies are optional and are only needed for the matching features described
+below.
 
-1. In the [Discord Developer Portal](https://discord.com/developers/applications),
+## Set up with an AI coding agent
+
+The intended setup path is AI-assisted. You gather the accounts, keys, and Discord
+channel IDs; the coding agent checks the machine, prepares the root configuration,
+starts the service, and explains any failure. Do not paste secrets into an AI chat.
+
+### What the human needs to collect
+
+1. Install Docker with Compose, or ask your coding agent to check whether it is
+   already available.
+2. In the [Discord Developer Portal](https://discord.com/developers/applications),
    create an application and bot. Under **Bot**, enable **Message Content Intent**.
-2. Under **OAuth2 > URL Generator**, select the `bot` scope and these permissions:
+3. Under **OAuth2 > URL Generator**, select the `bot` scope and these permissions:
    **View Channels**, **Read Message History**, **Send Messages**, **Embed Links**,
    and **Attach Files**. Open the generated URL and invite the bot to your server.
-3. In Discord, enable **User Settings > Advanced > Developer Mode**, then right-click
-   each channel the bot may read and select **Copy Channel ID**.
+4. In Discord, enable **User Settings > Advanced > Developer Mode**. Right-click each
+   channel the bot may read and select **Copy Channel ID**.
+5. Create keys in the [AssemblyAI dashboard](https://www.assemblyai.com/dashboard/)
+   and [OpenAI API platform](https://platform.openai.com/api-keys).
 
-Use the bot token from the developer portal—never a Discord user token.
+Use the Discord bot token from the developer portal—never a Discord user token.
 
-### 2. Configure the service
+### Give this prompt to the coding agent
 
-```bash
-git clone https://github.com/ToshiGGs/Youtube-Transcription.git
-cd Youtube-Transcription
-cp .env.example .env
+Open this repository in your coding agent, then send it this prompt:
+
+```text
+Set up and verify this repository locally with Docker Compose.
+
+Read README.md, .env.example, compose.yaml, and the relevant configuration code
+before acting. Preserve the existing security defaults and do not install or upgrade
+global packages.
+
+If the repository-root .env file does not exist, copy .env.example to .env. Never
+print, log, commit, or paste secret values. Stop after creating the file and tell me
+only which required variable names I must fill in.
+
+After I confirm that .env is ready, validate the configuration without displaying
+its contents. Then run the repository's Docker Compose preflight, build and start the
+bot, check service health, and inspect bounded recent logs. Report the exact check
+results, explain any failure in plain English, and tell me how to run one private
+Discord smoke test. Do not change application behavior just to make startup pass.
 ```
 
-Set these values in `.env`; separate multiple channel IDs with commas:
+The agent will create `.env` as a **file** in the repository root. Paste these four
+values into that file yourself; separate multiple channel IDs with commas:
 
 ```dotenv
 DISCORD_BOT_TOKEN=...
@@ -40,21 +75,13 @@ ASSEMBLYAI_API_KEY=...
 OPENAI_API_KEY=...
 ```
 
-Create provider keys in the [AssemblyAI dashboard](https://www.assemblyai.com/dashboard/)
-and [OpenAI API platform](https://platform.openai.com/api-keys). Keep `.env`
-private; all other settings in `.env.example` are optional or have safe defaults.
+All other values in `.env.example` are optional or have defaults. Keep `.env`
+private. Once it is filled in, tell the agent: `The root .env file is ready; continue
+the setup and verification.`
 
-### 3. Start and test
-
-```bash
-docker compose up -d --build
-docker compose ps
-docker compose logs --tail=100 bot
-```
-
-Wait for `Discord bot is connected and ready`, then paste a YouTube URL in an allowed
-channel. The bot should reply with a summary and a `.txt` transcript. It opens no
-inbound port.
+A successful setup ends with a healthy `bot` service and the log message
+`Discord bot is connected and ready`. For the private smoke test, post a YouTube URL
+in one allowed channel. The bot should reply with a summary and a `.txt` transcript.
 
 ## Supported inputs
 
