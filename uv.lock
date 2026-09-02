@@ -2254,7 +2254,7 @@ wheels = [
 ]
 
 [[package]]
-name = "youtube-transcription-bot"
+name = "media-transcription-bot"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [

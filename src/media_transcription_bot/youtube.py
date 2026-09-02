@@ -584,7 +584,7 @@ class YouTubeService:
         except Exception:
             logger.info("Timed transcript path failed for a YouTube video.")
 
-        with tempfile.TemporaryDirectory(prefix="youtube-transcription-") as raw_temp:
+        with tempfile.TemporaryDirectory(prefix="youtube-media-") as raw_temp:
             temp_dir = Path(raw_temp)
             if transcript is None:
                 try:

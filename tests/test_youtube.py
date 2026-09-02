@@ -7,12 +7,12 @@ from types import SimpleNamespace
 import pytest
 import requests
 
-import youtube_transcription_bot.youtube as youtube_module
-from youtube_transcription_bot.errors import (
+import media_transcription_bot.youtube as youtube_module
+from media_transcription_bot.errors import (
     TranscriptUnavailableError,
     UnsupportedInputError,
 )
-from youtube_transcription_bot.youtube import (
+from media_transcription_bot.youtube import (
     YOUTUBE_TRANSCRIPT_REQUEST_TIMEOUT_SECONDS,
     VideoMetadata,
     YouTubeService,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from youtube_transcription_bot.logging_config import RedactingFormatter
+from media_transcription_bot.logging_config import RedactingFormatter
 
 
 def test_formatter_redacts_secrets_in_tracebacks() -> None:

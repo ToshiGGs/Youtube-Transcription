@@ -4,8 +4,8 @@ import subprocess
 
 import pytest
 
-from youtube_transcription_bot.errors import MediaLimitError
-from youtube_transcription_bot.transcription import validate_local_media_duration
+from media_transcription_bot.errors import MediaLimitError
+from media_transcription_bot.transcription import validate_local_media_duration
 
 
 @pytest.mark.asyncio

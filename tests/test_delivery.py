@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from youtube_transcription_bot.delivery import transcript_document
-from youtube_transcription_bot.models import TranscriptArtifact
+from media_transcription_bot.delivery import transcript_document
+from media_transcription_bot.models import TranscriptArtifact
 
 
 def test_transcript_document_includes_provenance():

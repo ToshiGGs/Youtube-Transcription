@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def _directory() -> Path:
-    return Path(tempfile.gettempdir()) / f"youtube-transcription-bot-{os.getuid()}"
+    return Path(tempfile.gettempdir()) / f"media-transcription-bot-{os.getuid()}"
 
 
 def _path() -> Path:

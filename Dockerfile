@@ -24,6 +24,6 @@ ENV PYTHONPATH=/app/src
 USER 10001:10001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=4 \
-  CMD ["python", "-m", "youtube_transcription_bot.health"]
+  CMD ["python", "-m", "media_transcription_bot.health"]
 
-ENTRYPOINT ["python", "-m", "youtube_transcription_bot"]
+ENTRYPOINT ["python", "-m", "media_transcription_bot"]

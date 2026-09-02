@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from youtube_transcription_bot.config import MAX_ATTACHMENT_BYTES_LIMIT, Settings
+from media_transcription_bot.config import MAX_ATTACHMENT_BYTES_LIMIT, Settings
 
 
 def test_settings_parse_explicit_channel_allowlist(settings_factory):

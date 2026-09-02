@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
-name = "youtube-transcription-bot"
+name = "media-transcription-bot"
 version = "1.0.0"
 description = "A security-first Discord bot for YouTube, podcast, and uploaded-media transcription and summarization."
 readme = "README.md"
@@ -45,10 +45,10 @@ dev = [
 ]
 
 [project.scripts]
-youtube-transcription-bot = "youtube_transcription_bot.__main__:main"
+media-transcription-bot = "media_transcription_bot.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/youtube_transcription_bot"]
+packages = ["src/media_transcription_bot"]
 
 [tool.pytest.ini_options]
 addopts = "-q --basetemp=.pytest-tmp"
@@ -67,7 +67,7 @@ ignore = ["S101", "ASYNC240"]
 python_version = "3.11"
 strict = true
 warn_unused_ignores = true
-packages = ["youtube_transcription_bot"]
+packages = ["media_transcription_bot"]
 
 [[tool.mypy.overrides]]
 module = ["assemblyai.*", "defusedxml.*", "youtube_transcript_api.*"]

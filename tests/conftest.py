@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from youtube_transcription_bot.config import Settings
+from media_transcription_bot.config import Settings
 
 
 @pytest.fixture

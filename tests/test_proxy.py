@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from youtube_transcription_bot.proxy import build_youtube_identity
+from media_transcription_bot.proxy import build_youtube_identity
 
 
 def test_proxy_credentials_never_enter_ytdlp_arguments(settings_factory):

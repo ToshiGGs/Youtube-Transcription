@@ -4,14 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 
-import youtube_transcription_bot.bot as bot_module
-from youtube_transcription_bot.bot import (
+import media_transcription_bot.bot as bot_module
+from media_transcription_bot.bot import (
     JobKind,
     _download_attachment,
     _write_bounded_chunks,
     route_message,
 )
-from youtube_transcription_bot.errors import MediaLimitError, UnsupportedInputError
+from media_transcription_bot.errors import MediaLimitError, UnsupportedInputError
 
 
 def _message(content: str, attachments=None):

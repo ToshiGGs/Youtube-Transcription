@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from youtube_transcription_bot.models import PodcastEpisode
-from youtube_transcription_bot.podcast import EpisodeTarget, _episode_score, parse_rss
+from media_transcription_bot.models import PodcastEpisode
+from media_transcription_bot.podcast import EpisodeTarget, _episode_score, parse_rss
 
 RSS = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">

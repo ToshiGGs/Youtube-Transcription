@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import youtube_transcription_bot.summary as summary_module
-from youtube_transcription_bot.summary import (
+import media_transcription_bot.summary as summary_module
+from media_transcription_bot.summary import (
     SUMMARY_PROMPT,
     SummaryService,
     neutralize_mentions,

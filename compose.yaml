@@ -1,10 +1,10 @@
-name: youtube-transcription
+name: media-transcription
 
 services:
   bot:
     build:
       context: .
-    image: youtube-transcription-bot:local
+    image: media-transcription-bot:local
     env_file:
       - path: ${BOT_ENV_FILE:-.env}
         required: true

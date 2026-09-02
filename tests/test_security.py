@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from youtube_transcription_bot.errors import MediaLimitError, UnsafeRemoteUrlError
-from youtube_transcription_bot.security import (
+from media_transcription_bot.errors import MediaLimitError, UnsafeRemoteUrlError
+from media_transcription_bot.security import (
     _supported_media_type,
     _validate_media_response,
     is_public_ip,
